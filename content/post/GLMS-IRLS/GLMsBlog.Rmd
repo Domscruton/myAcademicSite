@@ -1,0 +1,299 @@
+---
+title: "GLMs: Intuition behind the Link function and Derivation of Iteratively Reweighted Least Squares"
+author: "Dominic Scruton"
+date: "2 August 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## GLMs - A Natural Extension of the Linear Model
+
+The first model we naturally learn on any statistics-based course is Simple Linear Regression (SLR). Despite placing strong (linear) assumptions on the relationship between the response and covariates, as well as the error distribution if we are interested in statistical inference, the Linear model is a surprisingly useful tool for representing many natural processes. However, when we wish to deal with non-linear random variable generating processes, such as the probability of occurrence of an event from a binary or multinomial distribution, or for the modelling of counts within a given time period, we need to generalize the Linear Model.
+
+Generalized Linear Models enable us to explicitly model the mean of a distribution from the exponential family, such that predictions lie in a feasible range and the relationship between the mean and the variance is appropriate to perform reliable inference. In this brief blog we discuss the intuition behind the Generalized Linear Model and Link function and prove the method of Iteratively ReWeighted Least Squares enables us to fit a GLM, before implementing it in R. 
+
+
+Generalized Linear Models have 3 components:
+
+__1) Random Component Error Structure__
+
+$$y_i \sim exponential \; family \; distibution$$
+
+We also typically assume each $y_i$ is independent and identically distributed, although this assumption can be relaxed through the use of Generalized Estimating Equations (GEE's). 
+
+__2) Systematic Component/ Linear Predictor__
+
+$$\eta_i = \beta_0 + \sum_{i = 1}^{p}\beta_p x_{i, p}$$
+
+__3) Link Function__
+
+$$\mathop{\mathbb{E}}[y_i | x_{1, i}, ..., x_{p, i}] = \mu_i$$
+$$g(\mu_i) = \eta_i$$
+
+It should be made clear that we are not modellig the response $y_i$ explicitly, but rather modelling the mean of the distibution, $\mu_i$. Predictions for each observation $i$ are given by $\mu_i$, with each $y_i$ assumed to be centred around $\mu_i$ in expectation but with an error term that has a distibution specified by the member of the exponential family used. Therefore, the link function does not transform the response $y_i$ but instead transforms the mean $\mu_i$. Note that the linear model is a specific type of GLM, where $y_i \sim Normal$ and $g(\mu_i) = \mu_i = \eta_i = \beta_0 + \sum_{i = 1}^{p}\beta_p x_{i, p}$. For a Poisson GLM, each $y_i$ is a r.v. simulated from the Poisson distribution with mean $\mu_i$, hence $y_i$ has a Poisson error distribution, the difference between $y_i$ and $\hat{y_i} = \mu_i$. 
+
+## Link Functions
+
+So Generalized Linear models are simply a natural extension of the Linear Model. They differ through the explicit introduction of a link function (the link function for the linear model is simply the identity, $g(\mu) = \mu$) and through the specification of a mean-variance relationship (the response belongs to a member of the exponential family). Using a link function allows us to transform values of the linear predictor to predictions of the mean, such that these predictions are always contained within the range of possible values for the mean, $\mu_i$. 
+
+When choosing a link function, there is no 'correct' choice, however there are a few properties we require to be able to interpret and fit a model:
+
+1) The link function transforms the linear predictor such that the prediction of $\mu_i$ for each $y_i$ is within the range of possible values of $\mu$.
+
+2) The link function must be _monotonic_ and therefore have a _unique inverse_. That is, each value on the linear predictor must be mapped to a unique value of the mean and the link function must preserve the order/ranking of predictions. 
+
+3) The link function must be _differentiable_, in order to estimate model coefficients. 
+
+For OLS, the linear predictor $X\beta$ can take on any value in the range $(-\infty, \infty)$. For a Poisson model, we require the rate parameter $\mu$ (equivalent to the commonly used $\lambda$), to lie in the range $(0, \infty)$, thus we need a link function that transforms the linear predictor $\eta$ to lie in this range. The common choice of link function for a Poisson GLM is the log-link ($\log(\mu_i) = \eta_i$). Exponentiating the linear predictor results in $\mu_i \in (0, \infty)$ as required for count data modeled via a Poisson. The log-link also results in a nice interpretation, since it exponentiates the linear predictor resulting in a multiplication of exponentiated coefficients: $log(\mu_i) = exp(\b_0 + \beta_1 x_{1, i}) = \exp(\beta_0) \exp(\beta_1 x_{1, i})$. Note that we can't use the square root function as a link function since it does not have a _unique inverse_ (i.e. $\sqrt(4) = \pm 2$). 
+
+For the Binomial, we choose a link function that maps $p_i$, the probability of success to the interval $[0, 1]$. The link function $g(\mu_i) = log(\frac{p_i}{n - p_i}) = X \beta_i$ is one candidate. This transforms the Linear predictor: $\frac{p_i}{1 - p_i} = \exp(X \beta_i)$ $\implies p_i = (\frac{e^{X \beta_i}}{1 + e ^ {X \beta_i}}) \in [0, 1]$ to the required range. 
+
+Whilst we are able to choose any link function that satisfies these properties, the usual choice is to select the _Canonical_ link function, which arises from writing the distribution in its exponential form. These link functions have nice mathematical properties and simplify the derivation of the Maximum Likelihood Estimators. We could also use an Information Criteria such as AIC to choose the best-fitting link function, although there is typically little deviation in performance, so we typically choose the link function with the most intuitive interpretation (which is often the canonical link function anyway).
+
+Some common distributions and Canonical links are show below:
+
+| Family | Canonical Link ($\eta = g(\mu)$) | Inverse Link ($\mu = g^{-1}(\eta)$) |
+|--------|----------------------------------|-------------------------------------|
+| Binomial |  Logit: $\eta = log \left( \frac{\mu}{n - \mu} \right)$ | $\mu = \frac{n}{1 + e^{-n}}$ |
+| Gaussian | Identity: $\eta = \mu$ | $\mu = \eta$ |
+| Poisson | Log: $\eta = log(\mu)$ | $\mu = e^{\eta}$ |
+| Gamma | Inverse: $\eta = \frac{1}{\mu}$ | $\mu = \frac{1}{\eta}$ |
+
+## The Exponential Family of Distributions
+ 
+A random variable y has a distribution within the exponential family if its probability density function is of the form:
+
+$$f(y;\theta, \phi) = exp \left( \frac{y \theta - b(\theta)}{a(\phi)} + c(y, \phi) \right)$$
+
+where:
+
+- $\theta$ is the location parameter of the distribution
+
+- $a(\phi)$ is the scale/dispersion parameter
+
+- $c(y, \phi)$ is a normalization term
+
+It can also be shown that $\mathop{\mathbb{E}}[y] = b'(\theta)$ and $Var[y] = b''(\theta) a(\phi)$.
+
+## Likelihood Analysis and Newton-Raphson Method
+
+The fitting of any form of Statistical Learning algorithm involves an optimization problem. Optimization refers to the task of either minimizing or maximizing some function $f(\mathbf{\beta})$ by altering $\beta$. We usually phrase most optimization problems in terms of minimizing $f(\beta)$. For the case of parametric learning models (we place distributional assumptions on the target/response $y_i$, such that they are drawn independently from  some probability distribution $p_{model}(y, \theta)$), we  we can also use the process of Maximum Likelihood to find model coefficients. Under this approach, we have the following optimization problem:
+
+$$\mathbf{\beta}^* =arg max(l(y_i | \mathbf{\beta}))$$ 
+
+where $l(y_i)$ is the likelihood function. The likelihood can be interpreted as the probability of seeing the data in our sample given the parameters and we naturally wish to maximize this quantity to obtain a good model fit. 
+
+<div class="alert alert-info">
+  <strong>Why Maximum Likelihood?</strong> 
+  
+  There are several reasons why the process of Maximum Likelihood is preferential:
+  
+  1) Simple and intuitive method to find estimates for any _parametric_ model.
+  
+  2) For large samples, MLE's have useful properties, assuming large n and i.i.d (independent and identically distributed) samples
+  
+    a) $\mathop{\mathbb{E}}[\hat{\theta}_{MLE}] = \theta$ (__Unbiased__)
+    
+    b) $Var(\hat{\theta}_{MLE}) = \frac{1}{n I(\theta)}$, where $I(\theta)$ is the Fisher Information in the sample. That is, we can calculate the variance of model coefficients and hence perform inference
+    
+    c) The MLE also achieves the __Cramer Lower Bound__, that is it has the smallest variance of any estimator, thus is __Asymptotically Efficient__.
+    
+    However, there are several disadvantages to Maximum Likelihood, particularly if the purpose of modelling is for prediction. Under Maximum Likelihood, we fit exactly to the training dataset, resulting in overfitting and poor generalization to unseen data. 
+</div>
+
+Consider the general form of the probability density function for a member of the exponential family of distributions:
+
+$$f(y;\theta, \phi) = exp \left( \frac{y \theta - b(\theta)}{a(\phi)} + c(y, \phi) \right)$$
+
+The likelihood is then (assuming independence of observations):
+
+$$L(f(y_i)) = \prod_{i = 1}^n exp \left( \frac{1}{a(\phi)} (y_i \theta_i - b(\theta_i) + c(y_i, \phi) \right)$$
+
+with log-likelihood (since the log of the product of exponentials is the sum of the exponentiated terms):
+
+$$log(L(f(y_i))) = l(f(y_i)) = \sum_{i = 1}^n \frac{1}{a(\phi)}(y_i \theta_i - b(\theta_i)) + c(y_i, \phi)$$
+
+Since the logarithmic function is monotonically increasing, order is preserved hence finding the maximum of the log-likelihood yields the same result as finding the maximum of the likelihood. We wish to maximize this log-likelihood, hence we can differentiate, equate to zero and solve for $\beta_j$ (We could also ensure the second derivative evaluated at $\beta_j$ is negative, therefore we have maximized (and not minimized) the log-likelihood). Via the Chain Rule we have:
+
+__Equation 1__
+
+$$\frac{\partial l(f(y_i))}{\partial \beta_j} = \sum_{i = 1}^n \frac{\partial l(f(y_i))}{\partial \theta_i} \frac{\partial \theta_i}{\partial \mu_i} \frac{\partial \mu_i}{\partial \eta_i} \frac{\partial \eta_i}{\partial \beta_j} = 0$$
+
+This is also known as the Score function, since it tells us how sensitive the model is to changes in $\beta$ at a given value of $\beta$. Since we differentiate with respect to each coefficent, $\beta_j$ ($j \in [0, 1, ..., K]$), we have a system of $(K + 1)$ equations to solve. 
+
+<div class="alert alert-info">
+  <strong>Chain Rule</strong> 
+  
+  The Chain Rule is often used in Optimization problems. Here we can utilize the chain rule by recognizing that, as seen in __3.1__, the likelihood is a function of the location parameter of the distribution, $\theta$, which in turn is a function of the mean $\mu$. Via the link function, we have that $g(\mu_i) = \eta_i$ and via the linear predictor, $\eta_i = \beta_0 + \sum_{i = 1}^{p}\beta_p x_{i, p}$. 
+</div>
+
+Each of these individual partial derivatives can then be identified:
+
+$$\frac{\partial l_i}{\partial \theta_i} = \frac{y_i - b'(\theta_i)}{a(\phi)}$$
+
+$$\frac{\partial \theta_i}{\partial \mu_i} = \frac{1}{V(\mu_i)}$$
+
+since $\frac{\mu_i}{\theta_i} = b''(\theta_i) = V(\mu_i)$ where V is the variance function of the model as it dictates the mean-variance relationship.
+
+$$\frac{\partial \mu_i}{\partial \eta_i} = \frac{1}{g'(\mu_i)}$$
+
+since $g(\mu_i) = \eta_i \implies \frac{\partial \eta_i}{\partial \mu_i} = g'(\mu_i)$. Finally:
+
+$$\frac{\partial \eta_i}{\partial \beta_j} = x_j$$
+
+Putting this all together yields the Maximum Likelihood Equations:
+
+$$\sum_{i = 1}^n \frac{(y_i - \mu_i) x_{i, j}}{a(\phi) V(\mu_i) g'(\mu_i)} = 0$$
+
+<div class="alert alert-info">
+  <strong>Least Square Vs Maximum Likelihood</strong> If we assume a normal distribution, there are two methods to solve exactly for the coefficients (we could also use Gradient Descent however this does not typically yield an exact solution).   
+</div>
+
+However, this does not have a closed form solution (what does it mean for a linear system of equations to have a closed form solultion) (except for the normal distribution). As a sanity check to confirm our conclusions thus far, note that for the normal distribution we have the Normal Equations which have the standard closed form solution (what is it)?. The Maximum Likelihood equations are a set of equations for the regression coefficients $\mathbf{\beta} = (\beta_0, ..., \beta_1)$
+
+Effectively, we need to find coefficients $\beta_j$ (which for each observation $y_i$ affect our prediction of $\mu_i$, $g'(\mu_i)$ and $V(\mu_i)$ via our distributional assumptions for the relationship between the mean and the variance), such that summing these terms over all observations gives 0. To solve this, we use the Newton - Raphson Method
+
+## Iteratively Reweighted Least Squares (IRLS)
+
+Recall the Newton - Raphson method for a single dimension. We wish to find the root of the function (in this case the value of $\beta$ such that the derivative of the log-likelihood is 0). In One-Dimension, to find the root of function f we have:
+
+$$x_{t+1} = x_t - \frac{f(x_t)}{f'(x_t)}$$
+
+The closer $f(x_t)$ is to 0, the closer we are to the root, hence the step change between iterations will be smaller. 
+
+<center>
+<img src="NewtonRaphson.png" alt="Newton Raphson Method in One Dimension", width = "40%">
+</center>
+
+Instead of the log-likelihood function $f(x)$, we want to optimize its derivative. Therefore we have the following Newton-Raphson equation in One-Dimension:
+
+$$x_{t+1} = x_t - \frac{f'(x_t)}{f''(x_t)}$$
+
+or for the vector of coefficient estimates at iteration t:
+
+$$\beta_{t+1} = \beta_t - \left( \frac{\partial l}{\partial \beta_j}(\beta_t) \right) \left( \frac{\partial^2 l}{\partial \beta_j \partial \beta_k} \right)^{-1}$$
+
+The Newton-Raphson technique is derived by considering the _Taylor Expansion_ about the solution $\beta^*$ (that sets $\frac{\partial l}{\partial \beta}$ to zero). 
+
+$$0 = \frac{\partial l}{\partial \beta}(\beta^*) - (\beta - \beta^*) \frac{\partial^2 l}{\partial \beta_j \beta_k} + ...$$
+
+If we ignore all derivative terms higher than $2^{nd}$ order, we can derive and iterative solution. Under the Newton-Raphson approach, the function being minimized is approximated locally by a quadratic function, and this approximated function is minimized exactly. We then have:
+
+$$\beta_{t + 1} = \beta_t - \mathbf{H}^{-1}_t \mathbf{U}_t$$
+
+where $\mathbf{U}_t is the Score Vector$ evaluated at $\beta_t$. $\mathbf{H}_t$ denotes the (p + 1) x (p + 1) Hessian matrix of second Derivatives
+
+Given that $\frac{\partial l}{\beta_j} = \nabla_{\beta} l = \frac{(y_i - \mu_i)}{a(\phi)} \frac{x_{i,j}}{V(\mu_i)}\frac{1}{g'(\mu_i)}$, the Hessian is then:
+
+__Equation 4__
+
+$$\nabla^{2}_{\beta} = \sum_{i = 1}^n \frac{x_{i,j}}{a(\phi)} \left( (y_i - \mu_i)' \frac{1}{g'(\mu_i)} \frac{1}{V(\mu_i)} + (y_i - \mu_i) \left( \frac{1}{g'(\mu_i)} \frac{1}{V(\mu_i)} \right)' \right)$$
+
+by Product Rule. $y_i$ is a data point so does not depend on $\beta$. 
+
+$$\frac{\partial \mu_i}{\partial \beta_k} = \frac{\mu_i}{\eta_i} \frac{\eta_i}{\beta_k} = \frac{1}{g'(\mu_i)} x_k$$
+
+hence the first term becomes:
+
+$$\frac{x_{i,j}}{a(\phi)} \left( - \frac{x_{i, k}}{g'(\mu_i)} \right) \frac{1}{g'(\mu_i)} \frac{1}{V(\mu_i)} = - \frac{x_{i, j} x_{i, k}}{a(\phi)(g'(\mu_i))^2} \frac{1}{V(\mu_i)}$$
+
+Of course, if we differentiate by the same $\beta$-coefficient, we have $x_j^2$, which are values on the diagonal of the Hessian matrix, which recall is $\begin{bmatrix} \left( \frac{\partial ^2 l}{\partial \beta_j^2} \right) & \left( \frac{\partial ^2 l}{\partial \beta_k \partial \beta_j} \right)\\ \left( \frac{\partial ^2 l}{\partial \beta_j \partial \beta_k} \right) &  \left( \frac{\partial ^2 l}{\partial \beta_k^2} \right)\\ \end{bmatrix}$ in 2-Dimensions.
+
+Now consider the $2^{nd}$ term in __equation 4__:
+
+$$\left( \frac{1}{g'(\mu_i)} \frac{1}{V(\mu_i)} \right)'$$
+
+If we used Newton-Raphson, we would need to calculate this derivative. However, if we use __Fisher Scoring__, this term cancels out and we don't need to calculate the derivative. Fisher Scoring is a form of Newton's Method used in statistics to solve Maximum Likelihood equations numerically. Instead of usig the inverse of the Hessian, we use the inverse of the Fisher Information matrix:
+
+<div class="alert alert-info">
+  <strong>Fisher Scoring</strong> $$\beta_{t+1} = \beta_t = J^{-1} \nabla l$$ where $J = \mathop{\mathbb{E}}[- \nabla^2 l]$, the expected value of the negative Hessian.
+</div>
+
+Taking the negative expected value from __equation 4__, the first term becomes
+
+$$\mathop{\mathbb{E}} \left( - - \frac{x_{i,j} x_{i,k}}{a(\phi) (g'(\mu_i))^2} \frac{1}{V(\mu_i)} = \frac{x_{i,j}x_{i,k}}{a(\phi) (g'(\mu_i))^2} \frac{1}{V(\mu_i)}$$
+
+since none of the above values depende on $y$ hence are all constant. The $2^{nd}$ term in __equation 4__ becomes:
+
+$$\mathop{\mathbb{E}} \left( - \frac{x_{i,j}}{a(\phi)}(y_i - \mu_i) \left( \frac{1}{g'(\mu_i) V(\mu_i)} \right) ' \right) =  - \frac{x_{i,j}}{a(\phi)}(y_i - \mu_i) \left( \frac{1}{g'(\mu_i) V(\mu_i)} \right)' \mathop{\mathbb{E}}(y_i - \mu_i)$$
+
+but this expectation is equal to zero and the second term therefore vanishes. We then have:
+
+$$J = \sum_{i = 1}^n \frac{x_{i,j} x_{i,k}}{a(\phi) (g'(\mu_i))^2 \frac{1}{V(\mu_i)}} = \mathbf{X}^T \mathbf{W} \mathbf{X}$$
+
+This can be rewritten as:
+
+$$J = \mathbf{X}^T \mathbf{W} \mathbf{X}$$ 
+
+where 
+
+$$\mathbf{W} = \frac{1}{a(\phi)} \begin{bmatrix} \frac{1}{V(\mu_1)} \frac{1}{(g'(\mu_1))^2} &  & \\ & ... & \\ & & \frac{1}{V(\mu_n)(g'(\mu_n))^2}\\ \end{bmatrix}$$
+
+From Fisher Scoring, we have:
+
+$$\mathbf{\beta}_{t+1} = \mathbf{\beta_t} = \mathbf{J}^{-1} \nabla_{\beta} l (\beta_t)$$
+
+We can rewrite $\nabla_{\beta}l = \sum_{i = 1}^n \frac{y_i - \mu_i}{a(\phi)} frac{1}{a(\phi)} \frac{x_{i,j}}{V(\mu_i g'(\mu_i))}$ as  $\mathbf{X}^T \mathbf{D} \mathbf{V}^{-1} (y - \mu)$ where:
+
+$$\mathbf{D} = \begin{bmatrix} \frac{1}{g'(\mu_1)} & & \\ & ... & \\ & & \frac{1}{g'(\mu_n)} \\ \end{bmatrix}$$
+
+$$\mathbf{V}^{-1} = \frac{1}{a(\phi)} \begin{bmatrix} \frac{1}{V(\mu_1)} & & \\ & ... & \\ & & \frac{1}{V(\mu_n)} \\ \end{bmatrix}$$
+
+Then for the Fisher Equation we have:
+
+$$\mathbf{\beta}_{t+1} = \mathbf{\beta}_t + (\mathbf{X}^T \mathbf{W} \mathbf{X})^{-1} \mathbf{X}^T \mathbf{D} \mathbf{V}^{-1} (\mathbf{y} - \mathbf{\mu})$$
+
+We can write this more generally, by noting that $\mathbf{W}$ is the same as $\mathbf{D} \mathbf{V}^{-1}$, except we have $\frac{1}{(g'(\mu_i))^2}$.
+
+$$\implies \mathbf{D} \mathbf{V}^{-1} = \mathbf{W M}$$
+
+where
+
+$$\mathbf{M} = \begin{bmatrix}  \frac{1}{g'(\mu_1)} & & \\ & ... & \\ & & \frac{1}{g'(\mu_1)} \\ \end{bmatrix}$$
+
+$$\implies \beta_{t + 1} = \beta_t + (X^T W X)^{-1} X^T W M (y - \mu)$$
+
+We can already calculate each of these terms and thus generate an iterative model-fitting algorithm. We can update the $\beta$'s until convergence of the algorithm. We can then simplify the equation:
+
+$$\beta_{t+1} = (X^T W X)^{-1} (X^T W X) beta_t + (X^T W X)^{-1} X^T W M (y - \mu) =
+  (X^T W X)^{-1} X^T W (X \beta_t + M (y - \mu)) = 
+  (X^T W X)^{-1} X^T W Z_t$$
+  
+where $Z_t := \eta_t + M(y - \mu)$
+
+This is "iteratively Reweighted Least Squares"- at each iteration we are solving a weighted least squares problem, is iterative because we update W's and Z's at the same time. The amount the algorithm updates depends on two things- $Z_t$ and $W$. For $Z_t$, larger deviation between $y$ and $\mu$ results in larger steps in the iteration procedure. Unless we have a saturated model, $y \not \mu$ (observed values don't equal predicted values), there is a trade-off as we vary $\beta$, resulting in different discrepencies between $y_i$ and $\mu_i$. 
+
+The Hessian is a matrix of second derivatives of the log-likelihood function, that is, derivatives of the derivative of the log-likelihood function. The second derivative therefore measures curvature, that is how much the first derivative changes as we vary the input. If the likelihood has a second derivative of zero, then the likelihood (cost function) is a flat line, so its value can be predicted using only the gradient. If the gradient is 1, a step size of $\epsilon > 0$ then the likelihood function will increase by the value of $\epsilon$. If the $2^{nd}$ derivative is negative (the gradient of the likelihood function is becoming more negative fo an increase $\epsilon$ at $x$), the likelihood function curves downwards, so the likelihood will decrease by more than $\epsilon$. That is, the likelihood decreases faster than the gradient predicts for small $\epsilon$. 
+
+When our function has multiple input dimensions, there are many $2^{nd}$ derivatives (one for each feature and then for each feature crossed with every other feature), and can be collected in a matrix called the _Hessian_. If we look at the IRLS equation, we have 3 terms. Firstly, we have the original value of the function, the expected improvement due to the slope of the function and a correction we must apply to account for the curvature of the function. When this last term is too small, the likelihood step can actually move downhill. 
+
+<div class="alert alert-info">
+  <strong>Derivation of Model Fitting Algorithms/Coefficients</strong> This derivation of Iteratively Reweighted Least Squares for GLMs follows a similar procedure to the derivation of any model fitting algorithm. Firstly, we identify an objective function over which to optimize. Typical Machine Learning problems involve minimizing some loss function, which gives discrepencies between the actual and true values. We then differentiate this function to find a minimum and use Newton - Raphson ... What other algorithms are there for fitting other models and how are their model-fitting algorithms derived?
+</div>
+
+<div class="alert alert-info">
+  <strong>Why Bother with Parametric Assumptions</strong> 
+  
+  __Advantages__
+  - Large amounts of data can be modelled as random variables from the exponential family of distributions
+  - If there are relatively few observations, providing a structure for the model generating process can improve predictive performance
+  - Enables us to carry out inference on model covariates
+  - Simple and intuitive to understand. In some industries (such as insurance), this has huge benefits- it is transparent and can fit into a rate structure
+  
+  __Disadvantages__
+  - Validity of inference dependent on assumptions being satisfied
+  - Places a very rigid structure
+  - Typically has worse predictive performance than non-linear models, such as Boosted Trees and Neural Networks. 
+</div>
+
+## IRLS Implementation
+
+In the following, we implement IRLS for Generalized Linear Models (GLMs). We could also write in C++ for a more efficient implementation. 
+
+```{r}
+
+
+```
