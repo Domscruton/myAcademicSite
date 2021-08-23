@@ -25,13 +25,18 @@ experience:
   - title: Graduate Data Scientist
     company: Admiral
     company_url: ''
-    company_logo: org-gc
+    company_logo: admiral
     location: Cardiff
     date_start: '2020-09-01'
     date_end: ''
     description: |2-
-        Achievements & Responsibilities: 
-        Created new rating score for Price Elasticity to identify low and high elasticity groups and optimize pricing structure accordingly to maximize profit within regulatory and moral constraints. Project involved significant exploratory analysis including customized ggplot functions and Information Value metrics. Uplift Modelling approach taken to identify persuadable customers and the incremental response to price changes. Extracted value from Environment Agency Flood Data API to improve pricing of surface water run-off and automate claim alerts. Identified significant Loss Ratio patterns, enabling improved predictive accuracy for a high severity peril. Automated flood alerts mapped to existing and potential customer base, improving claims process speed and blocking purchase of policies in areas of immediate flood risk. Manual rate changes to current pricing structure, often for high-dimensional tables, to identify tactical pricing strategies, gaining an edge over competitors in subsets of the market. Developed Perils-based pricing structure tuned to individual perils (Accidental Damage, Escape of Water, Fire, Theft, Flood, etc.) to improve pricing granularity, transparency and ability to react to peril-specific changes in risk. Techniques centred around GLMs, GAMs and Gradient-Boosted Ensembles.
+        Delivered a range of internal Data Science projects:
+        
+        * Extracted risk insights from Environment Agency Flood API, utilizing Spatial Statistics methodologies. XGBoost frequency model supplemented current pricing structure, identifying significant Loss & Combined Ratio patterns. Created ETL Data Pipeline and Looker Dashboard to provide advanced warning to claims department and automate identification of adverse risks for Underwriting, reducing Fraud risk
+
+        * Manual rate changes to current pricing structure, often for high-dimensional tables, to identify tactical pricing strategies, gaining an edge over competitors in subsets of the market. 
+
+        * Created new rating score for Price Elasticity to identify low and high elasticity groups and optimize pricing structure accordingly to maximize profit within regulatory and moral constraints. Project involved significant exploratory analysis including customized ggplot functions and Information Value metrics. Uplift Modelling approach taken to identify persuadable customers and the incremental response to price changes. 
         
   #- title: Professor of Semiconductor Physics
 #    company: University X

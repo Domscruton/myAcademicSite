@@ -1,13 +1,20 @@
 ---
 title: "GLMs: Intuition behind the Link function and Derivation of Iteratively Reweighted Least Squares"
 author: "Dominic Scruton"
-date: "2 August 2021"
-output: html_document
+tags:
+- Optimization
+- GLMs
+- Mathematical Statistics
+date: "2021-09-01T00:00:00Z"
+draft: false
+output: md_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+_Intuition behind the Link function, discussion of the various model fitting techniques and their advantages & disadvantages, derivation of IRLS using Newton-Raphson and Fisher Scoring. IRLS is then implemented in R_
 
 ## GLMs - A Natural Extension of the Linear Model
 

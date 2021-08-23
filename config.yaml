@@ -5,7 +5,7 @@
 
 title: Dominic Scruton # Website name
 baseurl: 'https://domscruton.github.io/' # Website URL
-copyright: '© {2021} Dominic Scruton' # Footer text, e.g. '© {year} Me'
+copyright: '© {year} Dominic Scruton' # Footer text, e.g. '© {year} Me'
 
 ############################
 ## LANGUAGE

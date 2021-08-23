@@ -25,10 +25,10 @@ interests:
 # Education to show in About widget
 education:
   courses:
-  - course: MSc Statistics (Distinction, top)
+  - course: MSc Statistics
     institution: University of St Andrews
     year: 2020
-  - course: BSc Mathematics & Economics (1st, top for Maths)
+  - course: BSc Mathematics & Economics
     institution: Durham University
     year: 2019
 
@@ -50,9 +50,9 @@ social:
 # Link to a PDF of your resume/CV.
 # To use: copy your resume to `static/uploads/resume.pdf`, enable `ai` icons in `params.toml`, 
 # and uncomment the lines below.
-# - icon: cv
-#   icon_pack: ai
-#   link: uploads/resume.pdf
+#- icon: cv
+#  icon_pack: ai
+#  link: uploads/resume.pdf
 
 # Enter email to display Gravatar (if Gravatar enabled in Config)
 email: ""
@@ -63,6 +63,6 @@ highlight_name: false
 
 I'm a Graduate Data Scientist in Household Risk & Retail Pricing at Admiral Group PLC, a FTSE 100 Insurance firm. 
 
-My work involves optimizing the pricing structure through advanced and traditional Statistical Modelling and Machine Learning approaches. I am particularly interested in Stochastic Optimization, Statistical Inference and Bayesian Machine Learning (and its applications in Reinforcement Learning and Bayesian Networks).
+My work involves optimizing the pricing structure through advanced and traditional Statistical Modelling and Machine Learning approaches. I am particularly interested in Stochastic Optimization, Statistical Inference and Bayesian Machine Learning (and its applications in Reinforcement Learning and Bayesian Networks). 
 
-{{< icon name="download" pack="fas" >}} Download my {{< staticref "uploads/demo_resume.pdf" "newtab" >}}resumé{{< /staticref >}}.
+<!-- {{< icon name="download" pack="fas" >}} Download my {{< staticref "uploads/resume.pdf" "newtab" >}}resumé{{< /staticref >}}. -->

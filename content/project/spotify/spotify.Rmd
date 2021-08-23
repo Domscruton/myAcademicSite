@@ -1,0 +1,628 @@
+---
+title: "Spotify PCA & Cluster Analysis"
+author: 'Dominic Scruton'
+tags:
+- Other
+- R
+- Unsupervised Learning
+date: "2020-04-01T00:00:00Z"
+output:
+  html_document:
+    keep_md: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\pagebreak
+
+**Abstract**
+
+This report utilizes Principal Component and Cluster Analysis to assess differences between the performance of 5872 songs from the 2000's on the basis of 13 numeric variables. Firstly, the data contains a large amount of independent information, with the first three principal components consisting of just 54.7% of the total variation in the data. The 'loudness' of a song had the highest absolute loading on the first principal component axis, suggesting it was the most important variable in explaining the variance between observations. Cluster analysis was then used to group the songs, and eight clusters were selected using K-Means. In particular, the performance of a song greatly varied between clusters. In the top-performing cluster, over 77% of songs were hits, in contrast to the worst performing cluster, where just 0.73% of songs were hits. The best-performing clusters had higher average danceability scores, while the worst performing clusters had very high levels of instrumentalness. This suggests that songs that are more suitable for dancing and contain higher levels of vocalness (less instrumental) are more likely to be 'hits', on average. From the conclusions of the analysis, several hypotheses were generated regarding differences in the performance and composition of songs contained within different clusters of the data and further methods for analysis, such as a Principal Component Logistic Regression were discussed.
+
+\pagebreak
+
+# **1 Introduction**
+This report considers Principal Component and Cluster analyses to identify which variables provide the largest amount of independent information and to understand the composition of songs that are more successful. The data consists of 5872 songs from the 2000's and 16 variables, 12 of which are continuous, three are categorical and one is binary. Seven of the continuous variables are 'engineered' metrics that relate to the constitution of each song. For example, 'energy' "represents a perceptual measure of intensity and activity"  and 'danceability' "describes how suitable a track is for dancing" (Ansari, 2020). The binary variable, called 'target', indicates whether the song was a 'hit' or a 'flop'. A 'hit' is defined as a song that has featured in the weekly list (issued by Billboards) of Hot-100 tracks in that decade at least once. Exactly half of the songs are labeled as 'hits' with the other half labeled as 'flops'. This analysis would enable artists to test whether their song is more likely to be a ‘hit’ or a ‘flop' based on the characteristics of the song and alter its chances of success depending on which cluster or partition of the data the song is located.
+
+# **2 Exploratory Data Analysis**
+Exploring the Data before carrying out a more rigorous analysis is important as it will enable us to assess the distributional properties of the variables and identify some of the individual patterns and relationships (Everitt, 2005). Furthermore, it can be used to consider the most appropriate methods of analysis for complex datasets that contain a range of variables whose inter-relationships are currently based on little theoretical background. We restrict the analysis of the data to the twelve continuous features that will be used for Principal Component and Cluster analyses.
+
+```{r, eval=T, echo=F, message=F, warning=F, results = "hide"}
+#Import data
+spotify_data <- read.csv("C:/Users/User/Documents/Education/St Andrews/Multivariate Analysis/Data/spotify dataset.csv")
+#Remove the track, artist and url for each song (irrelevant to the purposes of this general analysis)
+spotify_data <- spotify_data[, 4:19]
+#Load relevant libraries:
+#three-dimensional data cloud plots
+library(scatterplot3d)
+#multivariate visualization
+library(lattice)
+#visualization of correlation matrix
+library(corrplot)
+#Dendrograms
+library(ape)
+#Choose appropriate number of clusters
+library(NbClust)
+#Analysis of the Composition of different clusters
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+```
+
+## 2.1 Assessing the Distribution of Variables 
+Histograms are used to assess the general distribution of the variables and identify any outlying observations (**Appendix A**). In particular, we identify that some of the variables are expressed on widely differing scales: song duration is measured in milliseconds and ranges from 15920 to 4170227, whilst the engineered variables, such as 'danceability' range from just 0 to 1. In order for Principal Component and Cluster Analyses to work, the data therefore need to be scaled. This standardization may be adversely affected by strongly outlying observations. The histograms in **Appendix A** identify that the variables 'duration_ms' and 'sections', corresponding to the duration and number of sections of each song have a few strongly outlying observations. The 'Plot of Outliers' (**Appendix A**) identifies three clearly outlying observations and it is hard to fathom that they have come from the same underlying distribution as the rest of the data and may have been incorrectly imputed. Therefore, these observations are dropped from the analysis.
+
+Some of the univariate distributions for the variables are quite skewed and this may affect the quality of the Principal Component Analysis. Scaling the data, by subtracting the mean and dividing by the standard deviation will partly alleviate this issue.
+
+## 2.2 Exploring the Relationships Between Variables
+Principal Component Analysis (PCA) assumes that the covariance or correlation matrix adequately describes the relationship amongst the variables, that is the relationships are linear (Kutner et al., 2013). The matrix of scatterplots in **Appendix A** indicates that most variables appear to have roughly linear relationships, although there is often a large amount of scatter and 'noise'. Therefore, using the correlation matrix to describe the strength of relationships between the variables is justified and hence the conclusions of the PCA will be valid.
+
+However, whilst PCA nor Cluster analysis require multivariate normal data, they tend to work better on data that is multivariate normal (and spherical) (Everitt, 2005). In this case there appears to be some deviation from normality, especially at the tails of the distribution (**Appendix A**). Whilst this should not affect qualitative conclusions, it may impact on the exact specification of the principal components.
+
+```{r, echo = F}
+#Extract continuous variables
+numeric_variables <- c("danceability", "energy", 'loudness', 'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo', 'duration_ms', 'chorus_hit', 'sections')
+#Drop outlying observations
+outliers <- which(spotify_data$duration_ms > 3e6)
+spotify_no_outliers <- spotify_data[-c(outliers), ]
+#Extract numeric variables for later PCA and Cluster Analysis
+spotify_numeric <- spotify_no_outliers[numeric_variables]
+```
+
+The complexity of the Spotify data can be illustrated by plotting a scatterplot of 'danceability' against 'acousticness', but stratified by 'energy'. For low energy, the data tend to have high levels of acousticness and lower danceability scores, whilst for high energy, the levels of acousticness fall but danceability rises. Therefore, the relationship between 'danceability' and 'acousticness' depends on the energy levels of a song. Untangling the relationships and information within the data therefore justifies the use of more rigorous multivariate analytic techniques, such as PCA and Cluster Analysis.
+
+```{r, echo = F, fig.align = "center", fig.height = 3, fig.width = 6}
+#CoPlot for danceability and acousticness, stratified by Energy
+xyplot(spotify_no_outliers$danceability ~ spotify_no_outliers$acousticness | cut(spotify_no_outliers$energy, 3), main = "Coplot for Danceability and Acousticness, Cut by Energy", xlab = "Acousticness", ylab = "Danceability")
+```
+
+## 2.3 Correlation Among the Variables
+For PCA to be worthwhile, there needs to be some correlation between variables in the dataset (Everitt, 2005). The correlation plot below demonstrates that some variables are highly correlated, such as 'section' and 'duration', whilst others show no association. **Table 1** shows the variables that have the highest correlation with song performance (target). This indicates that songs that are more danceable and louder tend to perform better, however, they need not be the variables that explain the most variation in the data as assessed by Principal Component Analysis.
+
+```{r, eval = T, echo = F, results = "hide"}
+#correlation matrix
+corr_matrix <- cor(spotify_no_outliers)
+sort(corr_matrix[, 16], decreasing = TRUE)
+```
+
+```{r, echo = F, fig.align = "center", fig.height = 3.5, fig.width = 6}
+#correlation plot
+corrplot(corr_matrix, method="ellipse")
+```
+
+**Table 1- Correlation between the Target ('Hit' or 'Flop') for each explanatory Variable**
+
+| Variable           | Correlation with Target |
+|--------------------|-------------------------|
+| Danceability       |          0.4585         |
+| Instrumentalness   |         -0.4713         |
+| Loudness           |          0.3473         |
+
+# 3 Methodology
+
+## 3.1 Principal Component Analysis
+The Spotify dataset we have chosen has great potential for dimensionality reduction via Principal Component Analysis (PCA) as there is clear collinearity and correlation between some variables (see the correlation plot), suggesting that they share similar information (Zelterman, 2015). PCA was developed for continuous data, therefore the categorical variables ('key', 'mode', 'target' and 'time_signature') are dropped.
+
+### 3.1.1 The Theory of Principal Component Analysis
+Consider a multivariate random vector, $\vec{x} = (x_1, ..., x_p)$ with mean $\mu$ and covariance matrix $\Sigma$. Consider p different linear combinations of the the random vector $\vec{x}$:
+
+$$y_i = \vec{\alpha_i}^T \vec{x}$$
+
+for $i = 1,...,p$, where $p$ is the number of variables in the dataset and also corresponds to the total number of principal component axes. We would like to place each random vector of the data onto a new axis, where each axis explains as much variation as possible. $y_i$ are the projections of the random variable, $\vec{x}$ onto each of these axes. The $\alpha$'s are the loadings and they explain how much each variable, $i$, contributes to each of the principal component axes ($x_i$ is the value of the random vector for the $i$th variable). For each $i = 1,...,p$, the variances of $y_i$ can be expressed as:
+
+$$Var(y_i) = \vec{\alpha}_i^T \Sigma \vec{\alpha}_i$$
+
+In particular, we want to find the loadings ($\alpha$'s) that maximize the variance along each axis (Everitt, 2005). However, one could make these variances arbitrarily large by multiply the loadings by an arbitrarily large scalar, so we restrict the loadings to have length 1. The second restriction is that the new axes, $y_i$ should be mutually uncorrelated:
+
+$$Cov(y_i, y_j) = \vec{\alpha}_i^T \Sigma \vec{\alpha}_j = 0$$
+
+The solution to this constrained maximization problem can be solved via the use of a Lagrange Multiplier. The principal components are then given by the eigenvectors of the correlation (or covariance) matrix and the eigenvalues are the variances of each principal component. The principal components are mutually orthogonal (uncorrelated) and decrease in variance. 
+
+However, the scaling of the variables may have a significant impact on the results of a Principal Component Analysis. If the variables are measured on different scales, we should use the correlation matrix in the PCA, which is equivalent to scaling the data by dividing each data point by the standard deviation of that variable. In this case, the 'engineered' variables, such as 'liveness' and 'speechiness' lie on a normalized scale between 0 and 1, meanwhile tempo is measured in Beats Per Minute (BPM) and loudness is measured in decibels. Furthermore, if we carry out the analysis without scaling the variables, nearly 100% of the total variation is explained by just one principal component, which consists almost entirely of the 'duration' variable (**Appendix B**). This is because song duration is recorded in milliseconds, with a range of 5,920 to 4,170,227 milliseconds. Clearly scaling is required for any meaningful interpretation to take place.
+
+### 3.1.2 Choosing an Appropriate Number of Principal Components to Retain
+In order to reduce the dimensionality of the problem, we need to reduce the number of principal components, whilst ensuring information loss is minimized. These reduced components could then be used in a logistic regression in order to make predictions regarding the popularity of a song based on its characteristics. The two methods considered are Kaiser's criteria and the Scree plot. Under Kaiser's Criterion, we keep only those Principal components that have eigenvalues (variances) larger than the average. Since the PCA is calculated on the correlation matrix, this average will always be one. However, this cut-off point tends to retain too few components when the number of variables is small (Everitt, 2005). Another scheme for analyzing how many components to keep is the Scree Plot. This plots the variance of each principal component and the idea is to stop retaining components after the largest significant drop in the variance, thus removing the 'scree' from the analysis. 
+
+### 3.1.2 Analysing the Principal Components and Interpreting the Loadings
+The principal component loadings represent the relative importance of each of the original variables in determining the direction of the new principal component axes (Zelterman, 2015). The scores of the principal components are the orthogonal projections of each data point onto the principal component axes and represent the new space created under PCA. Mardia's Criterion can be used to select those variables that have significant influence on the positions of each principal component. Under this "rule of thumb", a variable is said to have a high influence if the value of its loading on the principal component axis is larger than $\frac{1}{\sqrt{p}}$, where $p$ is the number of variables used in the PCA. The variables with high loadings on the most important axes are the dominant variables that contribute most to the variation in the dataset (Zelterman, 2015). 
+
+## 3.2 Cluster Analysis
+Clustering the data will allow homogeneous subgroups of songs that display similar attributes to be identified. This information can then be used to generate hypotheses about differences in the observations between groups, such as whether those songs in groups that performed better, on average, exhibit certain attributes.
+
+### 3.2.1 Performing a Cluster Analysis
+The two general methods in which to perform a cluster analysis are partitioning and hierarchical methods. The K-Means algorithm first assigns the data into K clusters. The means or centroids of the clusters are then calculated. Observations are then iteratively reassigned to the nearest cluster (according to Euclidean distances) and for each iteration the centroid of each cluster will change as different observations become part of the grouping. This process continues until no more observations are reallocated. The data will need to be standardized and outlying observations removed in order to effectively carry out the K-means algorithm appropriately (Everitt, 2005). To deal with the sensitivity of the clusters under different starting location, the K-means approach can be first applied to a subset of the data to generate sensible initial centroids and then those centroids used as the starting point for the algorithm to be applied on the whole dataset.
+
+Hierarchical methods assume that groupings in the data cloud have a hierarchical structure, where smaller groups are nested in larger groups. However, such methods are difficult to justify for real datasets. For complex structures, partitioning the data using K-Means is a better approach (Zelterman, 2015). Non-hierarchical methods, such as K-means are also more appropriate if the data consist of mainly continuous or ordered variables. In this case, all of the variables used in the analysis are continuous. Therefore, K-means is used to partition the data cloud into songs with similar characteristics, as opposed to identifying natural clusters under a hierarchical method. In this case, applying Ward's method with 8 clusters provides similar qualitative results regarding cluster location (**Appendix C**).
+
+### 3.2.2 Selecting the Number of Clusters
+The 'elbow' method can be used to select an appropriate number of clusters for the K-means algorithm (Geron, 2019). The within group sum of squares is plotted against the number of clusters. Naturally, as the number of clusters increases, the within group sum of squares will decline, as observations in the cluster become 'closer', on average. In a similar manner to the scree plot, the number of clusters is chosen at the 'elbow', where the last significant drop in the within group sum of squares occurs (Everitt, 2005).
+
+# 4 Results
+
+## 4.1 Principal Component Analysis
+The results of the Principal Component analysis demonstrate that variables in the dataset contain a fairly large amount of independent information. In particular, the first three principal components contain only 54.7% of the total variation, whilst to retain 90% of the total variation in the data, we would need to keep the first eight principal components.
+
+```{r, echo = F, results = "hide"}
+#Principal Component Analysis with scaling
+pca.spotify <- prcomp(spotify_numeric, scale. = TRUE)
+summary(pca.spotify)
+```
+
+**Table 2- Standard Deviation and Cumulative Variance of the Principal Components**
+
+|Principal Component:  | PC1 | PC2 | PC3 | PC4 | PC5 | PC6 | PC7 | PC8 | PC9 | PC10| PC11| PC12|
+|----------------------|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----| 
+|Standard Deviation    |1.801|1.314|1.263|1.055|1.015|0.924|0.885|0.841|0.646|0.530|0.380|0.323|
+|Cumulative Proportion |0.270|0.414|0.547|0.640|0.726|0.797|0.862|0.921|0.956|0.979|0.991|1.000|
+
+The Scree plot suggests the use of just two principal components, however, there is a large amount of scree (remaining variation) left over. Under Kaiser's Criterion, the first five components have standard deviations greater than one and hence we would choose to retain these. Yet, the appropriate number of components to keep is context-specific. If the principal components were to be used as variables in a PC logistic regression, we may want to retain more components, to reduce information loss. However, the purpose of this report is to visualize and explain the most important components and variables, hence only the first two or three principal components are required for further analysis.
+
+```{r, echo = F, fig.align = "center", fig.height = 3.5, fig.width = 6}
+#Scree Plot
+plot(pca.spotify$sdev^2, xlab = "Principal Component", ylab = "variance", main = "Scree Plot for Spotify Principal Component Analysis (PCA)")
+lines(pca.spotify$sdev^2)
+```
+
+Large Loadings for a Principal Component (PC) axis indicate that a variable is important in explaining variation along that axis. The main loadings on the first two PC axes as assessed by Mardia's Criterion are shown in **Table 3**. The loudness of a song influences the direction of the first axis the most. Songs that are louder will on average have lower scores on this first axis. Similarly, energy and acousticness also have high influence. Therefore the first PC identifies a trend in the characteristics of songs; songs that have high levels of acousticness tend to have low energy and are less loud. Furthermore, given that the first PC contains the highest information of all of the components, this suggests that 'loudness', 'acousticness' and 'energy' provide more information regarding variation between songs than the other variables.
+
+```{r, eval=T, echo=F, results="hide"}
+#Principal Component loadings (rotations)
+pca.spotify$rotation
+#Mardia's Criterion
+for(i in 1:8){
+  which.pass<-abs(pca.spotify$rotation[,i])>(0.7*max(abs(pca.spotify$rotation[,i])))
+  cat("\nPC",i,"\n",sep="")
+  print(pca.spotify$rotation[which.pass,i])
+}
+```
+
+**Table 3- Loadings of each Variable for the Two Main Principal Component Axes**
+
+| Variable          |   Loading on First PC Axis  |
+|-------------------|-----------------------------|
+| Loudness          |    -0.4761                  |
+| Energy            |    -0.4423                  |
+| Acousticness      |     0.4194                  |
+
+| Variable          |   Loading on Second PC Axis |
+|-------------------|-----------------------------|
+| Sections          |      0.6664                 |
+| Duration / ms     |      0.6541                 |
+
+It appears that the first principal component is partly splitting the data between songs that were 'hits' and those that were 'flops'. As discussed, high values of this principle component are associated with high acousticness and low energy/loudness. Therefore it appears that songs with high acousticness perform worse, in general. These poorly performing songs also generally have larger number of sections.
+
+```{r, echo = F, fig.align = "center", fig.height = 3.5, fig.width = 6}
+#use sample of data to visualize scores
+scores1 <- pca.spotify$x[1:500,1]
+scores2 <- pca.spotify$x[1:500,2]
+#plot scores
+par(mfrow = c(1,2))
+plot(scores1,scores2,ylim=range(scores2),xlab="PC1",ylab="PC2", type="n",lwd=2, main = "Hit (1) or Flop (0)")
+#Add the variable of interest ('hit' or 'flop') in a reduced spatial plot
+text(scores1,scores2,labels=spotify_no_outliers$target[1:500],cex=0.7,lwd=2)
+plot(scores1,scores2,ylim=range(scores2),xlab="PC1",ylab="PC2", cex = 0.1 * spotify_no_outliers$sections, main = "Sections")
+```
+
+## 4.2 Cluster Analysis
+The K-means clustering algorithm is applied to the standardized data, in order to partition the data cloud by songs with similar characteristics. The plot of the within sum of squares for different numbers of clusters suggests that eight clusters should suffice in the analysis (at the 'elbow' of the curve).
+
+```{r, echo = F, fig.align = "center", fig.height = 3.5, fig.width = 6}
+#Scale data
+spotify_scaled <- scale(spotify_numeric)
+n<-length(spotify_scaled[,1])
+#find within group sum of squares (WSS) for different numbers of clusters
+#WSS for first cluster
+wss1 <- (n - 1) * sum(apply(spotify_scaled, 2, var))
+wss <- numeric(0)
+#calculate WSS for 2 to 20 group partitions given by k-means clustering
+set.seed(160001695)
+for (i in 2: 20) {
+  W <- sum(kmeans(spotify_scaled, i)$withinss)
+  wss <-c (wss,W)
+}
+wss<-c(wss1, wss)
+#Plot WSS against each cluster
+plot(1:20, wss, type = "l", xlab = "Number of groups", ylab = "within groups sum of squares", lwd = 2, main = "Selecting the Number of Clusters for K-Means")
+```
+
+As this dataset is relatively large, a subsample of the songs is initially clustered and then the estimated cluster centroids are used as seeds for analysis on the full dataset. Further, the clusters can be depicted on the principal component axes. These plots show that the first and second PC axes partly split the clusters. For example, clusters 6 and 7 are well separated from most other clusters, with large values on the first principal component. Since the first principal component has a large positive loading for acousticness and negative loadings for energy and loudness, this suggests that songs in these clusters are similarly characterized by higher levels of acousticness and lower levels of energy and loudness. This is consistent with the results in **Table 4**, where clusters 6 and 7 have large (scaled) acousticness values of 2.26 and 1.76, respectively.
+
+```{r, echo = F, fig.align = "center", fig.height = 3, fig.width = 6}
+set.seed(160001695)
+#perform initial cluster analysis on sub-sample of data
+k8_initial <- kmeans(spotify_scaled[1:500, ], 8)
+set.seed(160001695)
+#use initial clusters to start the full clustering
+k8 <- kmeans(spotify_scaled, centers = k8_initial$centers)
+scores_1 <- pca.spotify$x[,1]
+scores_2 <- pca.spotify$x[,2]
+#Add clusters as new variable, so we can test differences and generate hypotheses between songs in different (or the same) cluster. 
+spotify_no_outliers$cluster <- k8$cluster
+scores_3 <- pca.spotify$x[, 3]
+par(mfrow = c(1,1))
+#Plot clusters on PC axes
+spotify_no_outliers$cluster <- as.factor(spotify_no_outliers$cluster)
+ggplot(spotify_no_outliers, aes(x = scores_1, y = scores_2, colour = cluster)) + geom_point(shape=1) + ggtitle("Clusters on the Principal Component Axes") + labs(y="PC2", x = "PC1")
+```
+
+```{r, echo = F, results = "hide"}
+#Centres of each of the five clusters, by variable
+round(k8$centers, 3)
+```
+
+**Table 4- Centroids of Each Cluster** 
+
+|Cluster          |   1   |   2   |   3   |   4   |   5   |   6   |   7   |   8   |
+|-----------------|-------|-------|-------|-------|-------|-------|-------|-------|
+|Danceability     | -0.564| -0.415|  0.805|  0.748| -0.511| -1.229| -0.874|  0.055|
+|Energy           |  0.608|  0.629|  0.077|  0.283|  0.412| -2.230| -1.312| -0.972|
+|Loudness         |  0.456|  0.378|  0.229|  0.361| -0.024| -2.737| -1.505| -0.283|
+|Speechiness      | -0.162|  0.124|  2.308| -0.298| -0.193| -0.442|  0.344| -0.512|
+|Acousticness     | -0.547| -0.375| -0.062| -0.337| -0.449|  2.263|  1.762|  0.817|
+|Instrumentalness | -0.412| -0.276| -0.470| -0.431|  2.008|  1.644|  0.898| -0.388|
+|Liveness         | -0.163|  2.437|  0.041| -0.236| -0.109| -0.348| -0.065| -0.336|
+|Valence          |  0.273| -0.224|  0.642|  0.794| -0.559| -1.206| -0.619| -0.468|
+|Tempo            |  0.903| -0.066| -0.296| -0.363|  0.146| -0.568| -0.273| -0.198|
+|duration_ms      | -0.145| -0.107| -0.105| -0.199|  0.302| -0.028|  6.044|  0.031|
+|chorus_hit       | -0.155|  0.410| -0.082| -0.084|  0.261|  0.196|  0.224| -0.061|
+|sections         | -0.101| -0.232| -0.034| -0.172|  0.121|  0.008|  5.755|  0.062|
+
+In order to assess which variables play the largest role in separating out the clusters, a separate one-way ANOVA can be performed to test for a difference in the mean of each variable for each cluster. By ranking the F-values, we can identify which variables are most effective at separating the groups. **Table 5** shows the three variables with the largest F-values. This suggests energy, acousticness and then loudness are the variables that are most responsible for the differences between the clusters. This is consistent with the conclusion of the Principal Component Analysis, where these three variables had the highest loadings on the first principal component.
+
+```{r, eval = T, echo = F}
+#matrix to store F Values
+variables <- c('danceability', 'energy', 'loudness', 'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo', 'duration_ms', 'chorus_hit', 'sections', 'target')
+F.Results <- matrix(NA, nrow = length(variables), ncol = 2)
+F.Results <- as.data.frame(F.Results)
+
+F.Results$Variables <- variables
+#aov does not enable lists to be used as variables, so we must calculate all of the F-statistics individually
+#F-statistic for assessing difference in mean danceability across clusters
+F.Results[1, 2] <- summary(aov(spotify_no_outliers$danceability ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[2, 2] <- summary(aov(spotify_no_outliers$energy ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[3, 2] <- summary(aov(spotify_no_outliers$loudness ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[4, 2] <- summary(aov(spotify_no_outliers$speechiness ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[5, 2] <- summary(aov(spotify_no_outliers$acousticness ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[6, 2] <- summary(aov(spotify_no_outliers$instrumentalness ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[7, 2] <- summary(aov(spotify_no_outliers$liveness ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[8, 2] <- summary(aov(spotify_no_outliers$valence ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[9, 2] <- summary(aov(spotify_no_outliers$tempo ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[10, 2] <- summary(aov(spotify_no_outliers$duration_ms ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[11, 2] <- summary(aov(spotify_no_outliers$chorus_hit ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[12, 2] <- summary(aov(spotify_no_outliers$sections ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+F.Results[13, 2] <- summary(aov(spotify_no_outliers$target ~ spotify_no_outliers$cluster))[[1]][["F value"]][1]
+```
+
+**Table 5- F-Values for Variables across the Clusters**
+
+|      Variable    | F-Value |
+|------------------|---------|
+|  Energy          | 3345.34 |
+|  Acousticness    | 2371.59 |
+|  Loudness        | 1346.10 |
+
+```{r, echo = F}
+#Count number of songs in each cluster
+Cluster <- table(spotify_no_outliers$cluster)
+Counts <- data.frame(
+  No_Clusters = factor(c(seq(1, 8)), levels=c(seq(1, 8))),
+  Songs = Cluster
+)
+```
+
+The number of songs in each cluster reveals that the seventh cluster contains relatively few songs. In particular, this cluster is characterized by long song duration and a large number of sections in each song (**Table 4**) and indicates songs with quite different characteristics to those in the rest of the dataset. 
+
+```{r, echo = F, fig.align = "center", fig.height = 2.5, fig.width = 6}
+ggplot(data = Counts, aes(x = No_Clusters, y = Songs.Freq, fill = No_Clusters)) +
+  geom_bar(colour="black", stat="identity") + ggtitle("Number of Songs Contained Within Each Cluster") + labs(y="Song Frequency", x = "Cluster Number")
+```
+
+Some of the clusters of songs have far higher proportions of 'hits' than other clusters. Songs in clusters 3 and 4 display a 77% and 73% chance of being hits, respectively (**Table 6**). These clusters have higher average danceability scores than the other clusters (**Table 4**). Hence, songs that are better for dancing are more likely to be popular. This is consistent with the results from **Table 1**, where it was shown that danceability was positively correlated with song popularity.
+
+```{r, echo = F}
+#Percentage of songs that are 'hits' in each cluster
+N_clusters <- c(seq(1, 8))
+Percentage_target <- c(rep(NA, 8))
+for (i in N_clusters) {
+  x <- filter(spotify_no_outliers, spotify_no_outliers$cluster == i)
+  Percentage_target[i] <- (dim(filter(x, x$target == 1))[1] / dim(x)[1]) * 100
+}
+```
+
+**Table 6- Percentage of Songs in each Cluster that are Hits**
+
+|   Cluster              |  1    |  2    |  3    | 4     |  5   |   6  |  7   |   8   |
+|------------------------|-------|-------|-------|-------|------|------|------|-------|
+| Percentage of Hits (%) | 47.74 | 37.76 | 77.02 | 73.88 | 2.48 | 0.73 | 1.41 | 56.14 |
+
+# 5 Discussion
+Prior research has concluded that successful songs tend to be "‘happier’, more ‘party-like’, less ‘relaxed’ and more ‘female’ than most" (Interiano et al., 2018, p.1). The evidence presented here is fairly consistent with these results, as songs with higher danceability (more 'party-like') and more energy (less 'relaxed') tend to perform better. On a more general level, this information could be used to inform music artists about how to increase the likelihood that a song will be a 'hit' by altering the characteristics of that song to be similar to songs in clusters with a larger proportion of 'hits'.
+
+One can also see that between clusters there is a great deal of heterogeneity. The third cluster is the only cluster to have a large value for 'speechiness', in particular containing songs with a large amount of spoken words, possibly of the rap genre of music (**Table 4**). Further, the results of the Exploratory, Principal Component and Cluster Analyses are consistent. Energy, instrumentalness and loudness are the three variables that play the largest role in separating out the clusters (**Table 3**). These three variables also have the highest loadings on the first principal component, suggesting that they explain more of the variation in the data than the other variables. Furthermore, clusters of songs with high danceability and low instrumentalness were associated with greater popularity. This is consistent with the results in **Table 1**.
+
+Cluster analysis is a useful tool for generating hypotheses. For example, consider clusters 2 and 5. The centroids of these clusters are fairly similar, with roughly equal levels of danceability. The distinguishing difference between songs in each cluster are the levels of instrumentalness and liveness (**Table 4**). One could then formulate and test the hypothesis that the difference in the performance of songs between these two clusters is driven by differences in instrumentalness. If this is true, this suggests that an artist could increase the popularity of their song if it has similar characteristics to songs in cluster 5 by reducing the level of instrumentalness (i.e. by adding more vocal elements to their song). 
+
+We may also consider different hypotheses about the performance of songs contained within a given cluster. For example, are there differences in the characteristics of songs in cluster 1 that are 'hits' and 'flops' and which variables are the most important in explaining the within cluster popularity? This would enable an artist within a given genre (songs that have certain characteristics) to alter their music to increase the likelihood that the songs would be successful. The characteristics that increase song success may also differ between clusters.
+
+In order to make predictions regarding the popularity of a new song based on its attributes, a Principal Component Logistic Regression model which utilizes the principal components as regressors could be fitted. This is useful in overcoming issues of collinearity between variables, by excluding some of the low variance principal components from the model. Hence, a new song based on the discussed variables that has maximal probability of being a hit could be created. 
+
+# 6 Conclusion
+This report has uncovered several insights through the use of Principal Component and Cluster Analyses, some of which were not obvious when first exploring the data. In the top-performing cluster, over 77% of songs were hits, in contrast to the worst performing cluster, where just 0.73% of songs were hits. Clusters of songs with higher rates of success were associated with higher levels of danceability and lower instrumentalness (i.e. more vocal elements). Energy, acousticness and loudness were the variables that had the greatest influence on separating out the clusters and these variables also had the highest absolute loadings on the first principal component axes. From these conclusions, several hypotheses concerning differences in the characteristics and performance of songs across different clusters and within the same cluster were generated. These hypotheses included "Is the difference in the performance between songs in clusters 2 and 5 driven by differences in instrumentalness?" or "Do songs in cluster 1 that are 'hits' exhibit different characteristics to those songs that are 'flops'?" and suggest areas for future research.
+
+\pagebreak
+
+# **References**
+Brian S. Everitt. 2005. "An R and S-Plus Companion to Multivariate Analysis". Springer.
+
+Daniel Zelterman. 2015. "Applied Multivariate Statistics with R". Springer.
+
+Aurelien Geron. 2019. "Hands-On Machine Learning with Scikit-Learn, Keras and Tensorflow". O'Reilly Media. pp 213-274.
+
+Michael H. Kutner, Christopher J. Nachtsheim, John Neter, William Li. 2013. "Applied Linear Statistical Models." McGraw Hill Education.
+
+Garrett Grolemund, Hadley Wickham. 2017. "R for Data Science." O'Reilly Media. doi: https://r4ds.had.co.nz/.
+
+Myra Interiano, Kamyar Kazemi, Lijia Wang, Jienian Yang, Zhaoxia Yu and Natalia L. Komarova. 2018. "Musical Trends and Predictability of Success in Contemporary Songs in and out of the Top Charts." Royal Society Open Science. doi: https://royalsocietypublishing.org/doi/10.1098/rsos.171274.
+
+Eric A. Strobl, Clive Tucker. 2000. "The Dynamics of Chart Success in the U.K. Pre-Recorded Popular Music Industry." Journal of Cultural Economics 24. doi: https://doi.org/10.1023/A:1007601402245.
+
+Farooq Ansari. 2020. Spotify Hit Predictor Dataset. kaggle.com doi: https://www.kaggle.com/theoverman/the-spotify-hit-predictor-dataset?fbclid=IwAR1kE9neO0sdKb3pv6g-Z-SOvPXii9Ubqx0PTRIDkZYdqaBGEhtLGTrFkLA.
+
+RStudio Team (2016). RStudio: Integrated Development for R. RStudio, Inc., Boston, MA URL http://www.rstudio.com/.
+
+\pagebreak
+
+# **Appendix**
+
+## A) Exploratory Data Analysis
+
+**Histograms**
+Histograms for each continuous variable in the dataset.
+
+```{r, fig.height = 4, fig.width = 3.5}
+#histograms for each variable to assess the distribution and look for outliers.
+par(mfrow = c(1, 1))
+for (i in numeric_variables) {
+  hist(spotify_data[,i], main = c("Histogram of ", i), xlab = i, breaks = 20)
+}
+print('Range of Song Duration / milliseconds:')
+print(c(range(spotify_data$duration_ms)))
+```
+
+**Plot of Outliers**
+Scatterplot of Song Duration against the number of Sections in a song, to identify outlying observations.
+
+```{r, fig.align = "center"}
+#Analysis of outliers in the dataset
+#List of variables with clear outliers
+outliers <- c("duration_ms", "sections")
+plot(spotify_data[, outliers], main = "Plot of Outliers", xlab = "Song Duration", ylab = "Sections")
+```
+
+**Matrix of Scatterplots**
+Pairwise scatterplots for each continuous variable.
+
+```{r, fig.align = "center"}
+pairs(spotify_no_outliers[numeric_variables][1:200,])
+```
+
+**Testing for Multivariate Normality**
+A simple test of multivariate normality is conducted by plotting the (ordered) squared Mahalanobis Distance against the corresponding quantiles of a $\chi^2$-distribution with degrees of freedom equal to the number of variables in the dataset. If the transformed data lie along a straight line then the data are multivariate normally distributed. 
+
+```{r, eval = T, echo = F, warning = F, message = F, fig.align = "center"}
+#Calculate Variable means
+m <- colMeans(spotify_numeric)
+#Covariance matrix
+sigma <- var(spotify_numeric)
+#Mahalanobis Distances
+d <- mahalanobis(spotify_numeric, m, sigma)
+#quantile plot
+plot(qchisq((1 : 5869 - 0.5)/ 5769, 12), sort(d), ylim = c(0, 100), xlab = "Chi-Squared Quantiles", ylab = "Ordered Squared Mahalanobis Distances", main = "QQ-Plot to Test if the Data are Multivariate Normal")
+abline(a = 0, b = 1)
+```
+
+## B) Principal Component Analysis Without Scaling
+This appendix contains the results of a Principal Component Analysis on the unscaled numerical data. In particular, the first principal contains almost all of the variation in the data and this is provided by the 'duration' variable.
+
+```{r, eval = T, echo = T}
+#PCA Without Scaling
+pca.spotify.unscaled <- prcomp(spotify_numeric)
+summary(pca.spotify.unscaled)
+pca.spotify.unscaled$rotation
+```
+
+## C) Clustering with Hierarchical Methods
+Hierarchical clustering using Ward's method performs similarly to K-means on this dataset.
+
+```{r, echo = T, fig.align = "center"}
+#Euclidean Distance matrix
+DEuclidean <- dist(spotify_scaled)
+#cluster using Ward's method
+HClusters <- hclust(DEuclidean, "ward.D2")
+#Dendrogram
+plot(HClusters, xlab = "Observation Number")
+```
+
+Plotting the clusters on the first two principal component axes shows that cluster locations are generally similar to that of the K-means method.
+
+```{r, fig.align = "center"}
+#Cut observations into 8 clusters
+MyClusters <- cutree(HClusters, 8)
+#copy dataset
+spotify_trial <- spotify_no_outliers
+#extract clusters
+spotify_trial$cluster <- MyClusters
+spotify_trial$cluster <- as.factor(spotify_trial$cluster)
+#plot clusters on PC axes
+ggplot(spotify_trial, aes(x = scores_1, y = scores_2, colour = cluster)) + geom_point(shape=1) +
+  ggtitle("Hierarchical Clusters on the Principal Component Axes") + labs(y="PC2", x = "PC1")
+```
+
+## D) Code used in the Main Report
+
+```{r, eval=F, echo=T, message=F, warning=F}
+#1. Import Data and Relevant Libraries
+#Import data
+spotify_data <- read.csv("C:/Users/User/Documents/St Andrews/Multivariate Analysis/Data/spotify dataset.csv")
+#Remove the track, artist and url for each song (irrelevant to the purposes of this general analysis)
+spotify_data <- spotify_data[, 4:19]
+#Load relevant libraries:
+#three-dimensional data cloud plots
+library(scatterplot3d)
+#multivariate visualization
+library(lattice)
+#visualization of correlation matrix
+library(corrplot)
+#Dendrograms
+library(ape)
+#Choose appropriate number of clusters
+library(NbClust)
+#Analysis of the Composition of different clusters
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r, eval = F}
+#2. Dropping of Outliers from the Data and Extraction of Variables used in the PCA
+#Extract continuous variables
+variables <- sapply(spotify_data, is.numeric)
+numeric_variables <- vars[vars == TRUE]
+#Drop outlying observations
+outliers <- which(spotify_data$duration_ms > 3e6)
+spotify_no_outliers <- spotify_data[-c(outliers), ]
+#Extract numeric variables for later PCA and Cluster Analysis
+spotify_numeric <- spotify_no_outliers[numeric_variables]
+```
+
+```{r, eval = F}
+#3. CoPlot to illustrate complex relationships in the data cloud
+#CoPlot for danceability and acousticness, stratified by Energy
+xyplot(spotify_no_outliers$danceability ~ spotify_no_outliers$acousticness |
+         cut(spotify_no_outliers$energy, 3), 
+         main = "Coplot for Danceability and Acousticness, Cut by Energy", 
+         xlab = "Acousticness", ylab = "Danceability")
+```
+
+```{r, eval = F}
+#4. Correlation Between Variables
+#correlation matrix
+corr_matrix <- cor(spotify_no_outliers)
+sort(corr_matrix[, 16], decreasing = TRUE)
+#correlation plot
+corrplot(corr_matrix, method="ellipse")
+```
+
+```{r, eval = F}
+#5. Principal Component Analysis
+#Principal Component Analysis with scaling
+pca.spotify <- prcomp(spotify_numeric, scale. = TRUE)
+summary(pca.spotify)
+#Scree Plot
+plot(pca.spotify$sdev^2, xlab = "Principal Component", ylab = "variance", 
+     main = "Scree Plot for Spotify Principal Component Analysis (PCA)")
+lines(pca.spotify$sdev^2)
+#Principal Component loadings (rotations)
+pca.spotify$rotation
+#Mardia's Criterion to select variables with high loadings on each PC axis
+for(i in 1:8){
+  which.pass<-abs(pca.spotify$rotation[,i])>(0.7*max(abs(pca.spotify$rotation[,i])))
+  cat("\nPC",i,"\n",sep="")
+  print(pca.spotify$rotation[which.pass,i])
+}
+#use sample of data to visualize scores
+scores1 <- pca.spotify$x[1:500,1]
+scores2 <- pca.spotify$x[1:500,2]
+#plot scores
+par(mfrow = c(1,2))
+plot(scores1,scores2,ylim=range(scores2),xlab="PC1",ylab="PC2", type="n",lwd=2, 
+     main = "Hit (1) or Flop (0)")
+#Add target variable in reduced spatial plot
+text(scores1,scores2,labels=spotify_no_outliers$target[1:500],cex=0.7,lwd=2)
+#add scroes in reduced spatial plot
+plot(scores1,scores2,ylim=range(scores2),xlab="PC1",ylab="PC2", 
+     cex = 0.1 * spotify_no_outliers$sections, main = "Sections")
+```
+
+```{r, eval = F}
+#6. Cluster Analysis
+#Scale data
+spotify_scaled <- scale(spotify_numeric)
+n<-length(spotify_scaled[,1])
+
+#find within group sum of squares (WSS) for different numbers of clusters
+#WSS for first cluster
+wss1 <- (n - 1) * sum(apply(spotify_scaled, 2, var))
+wss <- numeric(0)
+#calculate WSS for 2 to 20 group partitions given by k-means clustering
+set.seed(160001695)
+for (i in 2: 20) {
+  W <- sum(kmeans(spotify_scaled, i)$withinss)
+  wss <-c (wss,W)
+}
+wss<-c(wss1, wss)
+#Plot WSS against each cluster to select number of clusters for K-Means
+plot(1:20, wss, type = "l", xlab = "Number of groups", ylab = "within groups sum of squares", 
+     lwd = 2, main = "Selecting the Number of Clusters for K-Means")
+
+set.seed(160001695)
+#perform initial cluster analysis on sub-sample of data
+k8_initial <- kmeans(spotify_scaled[1:500, ], 8)
+set.seed(160001695)
+#use initial clusters to start the full clustering
+k8 <- kmeans(spotify_scaled, centers = k8_initial$centers)
+scores_1 <- pca.spotify$x[,1]
+scores_2 <- pca.spotify$x[,2]
+#Add clusters as new variable, so we can test differences and generate hypotheses 
+#between songs in different (or the same) cluster. 
+spotify_no_outliers$cluster <- k8$cluster
+scores_3 <- pca.spotify$x[, 3]
+par(mfrow = c(1,1))
+#Plot clusters on PC axes
+spotify_no_outliers$cluster <- as.factor(spotify_no_outliers$cluster)
+ggplot(spotify_no_outliers, aes(x = scores_1, y = scores_2, colour = cluster)) +
+  geom_point(shape=1) + ggtitle("Clusters on the Principal Component Axes") + 
+  labs(y="PC2", x = "PC1")
+#Centres of each of the five clusters, by variable
+round(k8$centers, 3)
+
+#matrix to store F Values
+F.Results <- matrix(NA, nrow = length(variables), ncol = 2)
+F.Results <- as.data.frame(F.Results)
+
+F.Results$Variables <- variables
+#aov does not enable lists to be used as variables, so we must calculate all of the F-statistics
+#individually
+#F-statistic for assessing difference in mean danceability across clusters- anova of each variable
+#for each cluster
+i <- 0
+for(num_var in c(numeric_variables)){
+  i <- i + 1
+  F.Results[i, 2] <- summary(aov(spotify_no_outliers[[num_var]] ~
+                                 spotify_no_outliers$cluster))[[1]][["F value"]][1]
+}
+
+#Count number of songs in each cluster
+Cluster <- table(spotify_no_outliers$cluster)
+Counts <- data.frame(
+  No_Clusters = factor(c(seq(1, 8)), levels=c(seq(1, 8))),
+  Songs = Cluster
+)
+#Plot number of songs in each cluster
+ggplot(data = Counts, aes(x = No_Clusters, y = Songs.Freq, fill = No_Clusters)) +
+  geom_bar(colour="black", stat="identity") + 
+  ggtitle("Number of Songs Contained Within Each Cluster") + labs(y="Song Frequency", 
+                                                                  x = "Cluster Number")
+
+#Percentage of songs that are 'hits' in each cluster
+#Number of Clusters
+N_clusters <- c(seq(1, 8))
+#Empty vector of Percentages
+Percentage_target <- c(rep(NA, 8))
+for (i in N_clusters) {
+  x <- filter(spotify_no_outliers, spotify_no_outliers$cluster == i)
+  Percentage_target[i] <- (dim(filter(x, x$target == 1))[1] / dim(x)[1]) * 100
+}
+```
